@@ -1,0 +1,2 @@
+[console_scripts]
+agentic-ai = agentic_ai.main:main

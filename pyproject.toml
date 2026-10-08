@@ -1,0 +1,22 @@
+[project]
+name = "agentic-ai"
+version = "0.1.0"
+description = "Agen AI sederhana berbasis Claude dengan tool use"
+requires-python = ">=3.10"
+dependencies = ["anthropic>=1.12"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+agentic-ai = "agentic_ai.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["agentic_ai"]
