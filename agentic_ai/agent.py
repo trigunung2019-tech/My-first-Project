@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 import anthropic
@@ -24,6 +25,8 @@ class Agent:
         self,
         tools: ToolRegistry,
         client: Any | None = None,
+        system_prompt: str = SYSTEM_PROMPT,
+        name: str = "agen",
         model: str = DEFAULT_MODEL,
         effort: str = "high",
         max_steps: int = 20,
@@ -31,6 +34,8 @@ class Agent:
     ) -> None:
         self.tools = tools
         self.client = client or anthropic.Anthropic()
+        self.system_prompt = system_prompt
+        self.name = name
         self.model = model
         self.effort = effort
         self.max_steps = max_steps
@@ -45,7 +50,7 @@ class Agent:
             response = self.client.beta.messages.create(
                 model=self.model,
                 max_tokens=16000,
-                system=SYSTEM_PROMPT,
+                system=self.system_prompt,
                 tools=self.tools.definitions(),
                 thinking={"type": "adaptive"},
                 output_config={"effort": self.effort},
@@ -65,23 +70,24 @@ class Agent:
             if response.stop_reason != "tool_use":
                 return _text_of(response.content)
 
-            results = []
-            for block in response.content:
-                if block.type != "tool_use":
-                    continue
-                self.on_event("tool_call", {"name": block.name, "input": block.input})
-                output, is_error = self.tools.run(block.name, block.input)
-                self.on_event("tool_result", {"name": block.name, "output": output, "is_error": is_error})
-                results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": output,
-                    "is_error": is_error,
-                })
+            calls = [b for b in response.content if b.type == "tool_use"]
+            # Panggilan tool dalam satu giliran dijalankan paralel (mis. delegasi ke beberapa agen).
+            with ThreadPoolExecutor() as pool:
+                outputs = list(pool.map(self._run_tool, calls))
+            results = [
+                {"type": "tool_result", "tool_use_id": call.id, "content": output, "is_error": is_error}
+                for call, (output, is_error) in zip(calls, outputs)
+            ]
             # Semua hasil tool dikirim dalam satu pesan user.
             self.messages.append({"role": "user", "content": results})
 
-        raise AgentError(f"Agen berhenti setelah {self.max_steps} langkah tanpa jawaban akhir.")
+        raise AgentError(f"{self.name} berhenti setelah {self.max_steps} langkah tanpa jawaban akhir.")
+
+    def _run_tool(self, call: Any) -> tuple[str, bool]:
+        self.on_event("tool_call", {"agent": self.name, "name": call.name, "input": call.input})
+        output, is_error = self.tools.run(call.name, call.input)
+        self.on_event("tool_result", {"agent": self.name, "name": call.name, "output": output, "is_error": is_error})
+        return output, is_error
 
 
 def _text_of(content: list[Any]) -> str:

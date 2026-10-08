@@ -39,6 +39,16 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return list(self._tools)
 
+    def subset(self, names: list[str]) -> "ToolRegistry":
+        """Registry baru yang hanya berisi tool dengan nama tertentu."""
+        unknown = set(names) - set(self._tools)
+        if unknown:
+            raise KeyError(f"Tool tidak dikenal: {sorted(unknown)}")
+        sub = ToolRegistry()
+        for name in names:
+            sub.register(self._tools[name])
+        return sub
+
     def run(self, name: str, args: dict[str, Any]) -> tuple[str, bool]:
         """Jalankan tool. Mengembalikan (hasil, is_error)."""
         tool = self._tools.get(name)

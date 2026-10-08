@@ -13,6 +13,7 @@ agentic-ai = "agentic_ai.main:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 
 [build-system]
 requires = ["setuptools>=68"]
