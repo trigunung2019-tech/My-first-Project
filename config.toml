@@ -1,0 +1,14 @@
+# Konfigurasi tim agen. Path relatif dihitung dari folder file ini.
+# Di komputer perantara, arahkan folder_data ke shared folder server internal, misalnya:
+#   Windows : folder_data = '\\SERVER\HRD'   atau   'Z:/HRD'
+#   Linux   : folder_data = "/mnt/server/HRD"
+# Sebaiknya shared folder dipasang (mount) READ-ONLY untuk akun yang menjalankan agen.
+
+[perusahaan]
+nama = "PT Contoh Plastik"
+bidang = "pembuatan kantong plastik"
+
+[departemen.hrd]
+folder_data = "contoh_data/HRD"   # data asli: hanya dibaca
+folder_hasil = "hasil/HRD"        # draf surat & rekap disimpan di sini
+effort = "medium"

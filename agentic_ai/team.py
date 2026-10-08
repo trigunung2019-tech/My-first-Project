@@ -1,18 +1,17 @@
-"""Tim agen: satu koordinator yang membagi tugas ke agen-agen spesialis.
-
-Untuk menyesuaikan dengan perusahaan Anda, ubah daftar SPECIALISTS di bawah:
-tambah/hapus spesialis, tulis instruksinya, dan pilih tool yang boleh dipakainya.
-"""
+"""Tim agen: satu koordinator yang membagi tugas ke agen spesialis (satu per departemen)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 import anthropic
 
 from .agent import DEFAULT_MODEL, Agent, AgentError
-from .tools import Tool, ToolRegistry
+from .departments import DEPARTMENTS, PLANNED
+from .tools import Tool, ToolRegistry, base_registry, folder_tools
 
 
 @dataclass
@@ -20,73 +19,52 @@ class Specialist:
     name: str
     description: str  # dibaca koordinator untuk memilih spesialis yang tepat
     instructions: str
-    tools: list[str] = field(default_factory=list)
+    tools: ToolRegistry
     model: str = DEFAULT_MODEL
     effort: str = "medium"
 
 
-SPECIALISTS = [
-    Specialist(
-        name="analis_data",
-        description="Menghitung angka, menganalisis data dari file (CSV/teks), dan menyusun ringkasan numerik.",
-        instructions="Kamu analis data perusahaan. Selalu pakai tool calculate untuk perhitungan "
-                     "dan sebutkan sumber angka yang kamu pakai.",
-        tools=["calculate", "list_files", "read_file", "current_time"],
-    ),
-    Specialist(
-        name="peneliti_dokumen",
-        description="Mencari dan merangkum informasi dari dokumen perusahaan di workspace (SOP, kebijakan, catatan).",
-        instructions="Kamu peneliti dokumen perusahaan. Jawab hanya berdasarkan isi file yang kamu baca, "
-                     "sebutkan nama file sumbernya, dan katakan terus terang bila informasinya tidak ada.",
-        tools=["list_files", "read_file"],
-    ),
-    Specialist(
-        name="penulis",
-        description="Menulis atau merapikan dokumen: email, laporan, penawaran, pengumuman. Bisa menyimpan hasil ke file.",
-        instructions="Kamu penulis bisnis profesional. Tulis dengan jelas, sopan, dan sesuai tujuan. "
-                     "Simpan ke file hanya bila diminta.",
-        tools=["read_file", "write_file", "current_time"],
-    ),
-]
-
-COORDINATOR_PROMPT = """Kamu koordinator tim agen AI perusahaan.
+COORDINATOR_PROMPT = """Kamu koordinator tim agen AI di {perusahaan}, perusahaan {bidang}.
 Tugasmu: pahami permintaan pengguna, pecah menjadi sub-tugas, lalu delegasikan setiap sub-tugas
-ke spesialis yang paling cocok dengan tool `delegasikan`.
+ke agen departemen yang tepat dengan tool `delegasikan`.
 
-Spesialis yang tersedia:
+Agen departemen yang aktif:
 {roster}
 
+Departemen yang belum punya agen: {planned}.
+Bila permintaan menyangkut departemen itu, katakan bahwa agennya belum tersedia.
+
 Aturan:
-- Spesialis tidak melihat percakapan ini. Tulis setiap tugas lengkap dan mandiri: tujuan,
+- Agen departemen tidak melihat percakapan ini. Tulis setiap tugas lengkap dan mandiri: tujuan,
   data/konteks yang dibutuhkan, dan bentuk hasil yang diharapkan.
 - Sub-tugas yang tidak saling bergantung boleh didelegasikan sekaligus (paralel).
-- Bila hasil satu spesialis dibutuhkan spesialis lain, tunggu hasilnya lalu teruskan di tugas berikutnya.
-- Periksa hasil spesialis; delegasikan ulang bila kurang tepat.
-- Pertanyaan sederhana yang tidak butuh spesialis boleh kamu jawab langsung.
+- Bila hasil satu agen dibutuhkan agen lain, tunggu hasilnya lalu teruskan di tugas berikutnya.
+- Periksa hasil agen; delegasikan ulang bila kurang tepat atau tidak menyebut sumber data.
+- Jangan mengarang data perusahaan sendiri. Pertanyaan umum yang tidak butuh data boleh kamu jawab langsung.
 - Akhiri dengan jawaban gabungan yang ringkas untuk pengguna, dalam bahasa pengguna."""
 
 
 def build_team(
-    tools: ToolRegistry,
-    specialists: list[Specialist] = SPECIALISTS,
+    specialists: list[Specialist],
+    company: dict[str, str],
     client: Any | None = None,
     model: str = DEFAULT_MODEL,
     effort: str = "high",
     on_event: Callable[[str, Any], None] | None = None,
 ) -> Agent:
     """Bangun agen koordinator yang punya satu tool: `delegasikan` ke spesialis."""
+    if not specialists:
+        raise ValueError("Belum ada agen departemen yang aktif. Isi folder datanya di config.toml.")
     client = client or anthropic.Anthropic()
     by_name = {s.name: s for s in specialists}
-    # Validasi di awal agar salah ketik nama tool langsung ketahuan.
-    toolsets = {s.name: tools.subset(s.tools) for s in specialists}
 
     def delegasikan(agen: str, tugas: str) -> str:
         spec = by_name.get(agen)
         if spec is None:
-            raise ValueError(f"Spesialis '{agen}' tidak ada. Pilihan: {', '.join(by_name)}")
+            raise ValueError(f"Agen '{agen}' tidak ada. Pilihan: {', '.join(by_name)}")
         # Setiap delegasi memakai agen baru agar konteks tiap sub-tugas bersih.
         worker = Agent(
-            toolsets[agen], client=client, name=agen, system_prompt=spec.instructions,
+            spec.tools, client=client, name=agen, system_prompt=spec.instructions,
             model=spec.model, effort=spec.effort, on_event=on_event,
         )
         if on_event:
@@ -99,12 +77,12 @@ def build_team(
     coordinator_tools = ToolRegistry()
     coordinator_tools.register(Tool(
         name="delegasikan",
-        description="Serahkan satu sub-tugas ke agen spesialis dan terima hasil kerjanya.",
+        description="Serahkan satu sub-tugas ke agen departemen dan terima hasil kerjanya.",
         input_schema={
             "type": "object",
             "properties": {
-                "agen": {"type": "string", "enum": list(by_name), "description": "Nama spesialis."},
-                "tugas": {"type": "string", "description": "Instruksi lengkap dan mandiri untuk spesialis."},
+                "agen": {"type": "string", "enum": list(by_name), "description": "Nama agen departemen."},
+                "tugas": {"type": "string", "description": "Instruksi lengkap dan mandiri untuk agen."},
             },
             "required": ["agen", "tugas"],
             "additionalProperties": False,
@@ -112,9 +90,51 @@ def build_team(
         fn=delegasikan,
     ))
 
-    roster = "\n".join(f"- {s.name}: {s.description}" for s in specialists)
-    return Agent(
-        coordinator_tools, client=client, name="koordinator",
-        system_prompt=COORDINATOR_PROMPT.format(roster=roster),
-        model=model, effort=effort, on_event=on_event,
+    active = {s.name for s in specialists}
+    planned = [p for p in PLANNED if p.lower() not in active] or ["-"]
+    prompt = COORDINATOR_PROMPT.format(
+        **company,
+        roster="\n".join(f"- {s.name}: {s.description}" for s in specialists),
+        planned=", ".join(planned),
     )
+    return Agent(coordinator_tools, client=client, name="koordinator", system_prompt=prompt,
+                 model=model, effort=effort, on_event=on_event)
+
+
+def load_config(path: Path | str) -> dict[str, Any]:
+    path = Path(path)
+    with path.open("rb") as f:
+        config = tomllib.load(f)
+    config["_dir"] = path.resolve().parent
+    return config
+
+
+def company_info(config: dict[str, Any]) -> dict[str, str]:
+    info = config.get("perusahaan", {})
+    return {"perusahaan": info.get("nama", "perusahaan"), "bidang": info.get("bidang", "")}
+
+
+def specialists_from_config(config: dict[str, Any]) -> list[Specialist]:
+    """Satu spesialis untuk setiap departemen yang terdaftar di config.toml."""
+    base_dir: Path = config.get("_dir", Path.cwd())
+    company = company_info(config)
+    specialists = []
+    for key, settings in config.get("departemen", {}).items():
+        dept = DEPARTMENTS.get(key)
+        if dept is None:
+            raise KeyError(f"Departemen '{key}' di config.toml belum didefinisikan di departments.py. "
+                           f"Tersedia: {', '.join(DEPARTMENTS)}")
+        tools = base_registry()
+        output_dir = settings.get("folder_hasil")
+        for tool in folder_tools(base_dir / settings["folder_data"],
+                                 base_dir / output_dir if output_dir else None):
+            tools.register(tool)
+        specialists.append(Specialist(
+            name=key,
+            description=dept.description,
+            instructions=dept.instructions.format(**company),
+            tools=tools,
+            model=settings.get("model", DEFAULT_MODEL),
+            effort=settings.get("effort", "medium"),
+        ))
+    return specialists

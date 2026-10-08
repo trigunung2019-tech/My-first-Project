@@ -1,7 +1,11 @@
-"""Agen AI sederhana berbasis Claude dengan tool use."""
+"""Tim agen AI perusahaan berbasis Claude: koordinator + agen per departemen."""
 
 from .agent import Agent
-from .team import SPECIALISTS, Specialist, build_team
-from .tools import Tool, ToolRegistry, default_registry
+from .departments import DEPARTMENTS, Department
+from .team import Specialist, build_team, load_config, specialists_from_config
+from .tools import Tool, ToolRegistry, base_registry, default_registry, folder_tools
 
-__all__ = ["Agent", "SPECIALISTS", "Specialist", "build_team", "Tool", "ToolRegistry", "default_registry"]
+__all__ = [
+    "Agent", "DEPARTMENTS", "Department", "Specialist", "Tool", "ToolRegistry", "base_registry",
+    "build_team", "default_registry", "folder_tools", "load_config", "specialists_from_config",
+]

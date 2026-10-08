@@ -54,9 +54,9 @@ def test_agent_stops_after_max_steps(tmp_path):
 
 def test_file_tools_stay_inside_workspace(tmp_path):
     reg = default_registry(tmp_path)
-    assert reg.run("write_file", {"path": "a/b.txt", "content": "halo"}) == ("Tersimpan: a/b.txt (4 karakter)", False)
-    assert reg.run("read_file", {"path": "a/b.txt"}) == ("halo", False)
-    _, is_error = reg.run("read_file", {"path": "../../etc/passwd"})
+    assert reg.run("write_file", {"path": "a/b.txt", "content": "halo"})[1] is False
+    assert reg.run("read_document", {"path": "a/b.txt", "start_char": 0}) == ("halo", False)
+    _, is_error = reg.run("read_document", {"path": "../../etc/passwd", "start_char": 0})
     assert is_error
 
 

@@ -1,9 +1,9 @@
 [project]
 name = "agentic-ai"
 version = "0.1.0"
-description = "Agen AI sederhana berbasis Claude dengan tool use"
-requires-python = ">=3.10"
-dependencies = ["anthropic>=1.12"]
+description = "Tim agen AI perusahaan berbasis Claude: koordinator + agen per departemen"
+requires-python = ">=3.11"
+dependencies = ["anthropic>=1.12", "pypdf>=5", "python-docx>=1.1", "openpyxl>=3.1"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

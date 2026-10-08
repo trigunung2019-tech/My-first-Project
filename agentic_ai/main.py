@@ -8,7 +8,7 @@ import json
 import anthropic
 
 from .agent import DEFAULT_MODEL, Agent, AgentError
-from .team import build_team
+from .team import build_team, company_info, load_config, specialists_from_config
 from .tools import default_registry
 
 
@@ -29,15 +29,18 @@ def main() -> None:
     parser.add_argument("prompt", nargs="?", help="Tugas sekali jalan; kosongkan untuk mode interaktif")
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
-    parser.add_argument("--workspace", default="workspace", help="Folder yang boleh diakses agen")
-    parser.add_argument("--single", action="store_true", help="Pakai satu agen saja, tanpa koordinator")
+    parser.add_argument("--config", default="config.toml", help="File konfigurasi tim (default: config.toml)")
+    parser.add_argument("--single", action="store_true", help="Satu agen umum tanpa koordinator, memakai --workspace")
+    parser.add_argument("--workspace", default="workspace", help="Folder untuk mode --single")
     args = parser.parse_args()
 
-    tools = default_registry(args.workspace)
     if args.single:
-        agent = Agent(tools, model=args.model, effort=args.effort, on_event=_print_event)
+        agent = Agent(default_registry(args.workspace), model=args.model,
+                      effort=args.effort, on_event=_print_event)
     else:
-        agent = build_team(tools, model=args.model, effort=args.effort, on_event=_print_event)
+        config = load_config(args.config)
+        agent = build_team(specialists_from_config(config), company_info(config), model=args.model,
+                           effort=args.effort, on_event=_print_event)
 
     def ask(text: str) -> None:
         try:
