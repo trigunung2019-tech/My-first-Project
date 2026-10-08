@@ -1,8 +1,0 @@
-Metadata-Version: 2.4
-Name: agentic-ai
-Version: 0.1.0
-Summary: Agen AI sederhana berbasis Claude dengan tool use
-Requires-Python: >=3.10
-Requires-Dist: anthropic>=1.12
-Provides-Extra: dev
-Requires-Dist: pytest>=8; extra == "dev"
